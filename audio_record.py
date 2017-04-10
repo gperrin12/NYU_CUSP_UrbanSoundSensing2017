@@ -30,6 +30,26 @@ Linux
 >sudo apt-get install python-pyaudio python3-pyaudio
 
 """
+'''
+Geoff Notes 4-3-17:
+    for homework:
+    -need to take this file and add some code to it so it actually
+    records what is going on and puts it in a useful format. For example,
+    if the threshold is exceeded, log to a csv for the time and intensity
+    logged
+    
+    -record pizza party, I guess! see what and when the loudest sounds were
+
+    -send charlie a google drive link, AVIOD massive attachments
+
+    -paragraph in .csv of what, when, how, how long, WHERE it was recorded:
+    include a picture of where it was recorded!
+
+    -it'd be cool to include a time series plot of the recording, or at least
+    a subset to the important parts
+'''
+
+
 
 __author__ = "Charlie Mydlarz"
 __version__ = "0.1"
@@ -38,7 +58,9 @@ __status__ = "Development"
 import pyaudio
 import time
 import numpy as np
+import pandas as pd
 import wave
+import datetime
 
 # Declare variable global so other threads can make use of it
 global wavefile, recording
@@ -47,7 +69,7 @@ sample_rate = 44100                 # Sample rate of audio device
 frames_per_buffer = 2048            # Number of audio frames delivered per hardware buffer return
 channels = 1                        # Number of audio channels (1 = mono)
 fname = str(time.time()) + '.wav'   # Output wave filename using current UTC time
-total_duration = 60 * 5             # Total length of wave file
+total_duration = 60 * 60             # Total length of wave file
 device_id = -1                      # Default audio input device ID
 recording = True                    # Boolean check to hold while wait loop
 
@@ -78,6 +100,9 @@ def select_audio_device():
 # List and select audio input device
 device_id = select_audio_device()
 
+# create pandas dataframe to store hi levels data
+levels_df = pd.DataFrame(columns=('time', 'level'))
+
 
 def recorder_callback(in_data, frame_count, time_info, status_flags):
     """ This method is called whenever the audio device has acquired the number of audio samples
@@ -99,10 +124,16 @@ def recorder_callback(in_data, frame_count, time_info, status_flags):
     # Calculate root mean squared of audio buffer
     rms = np.sqrt(np.mean(np.square(audio_data)))
 
+    # Calculate time
+    current_time = (wavefile.getnframes() * 1.0) / sample_rate
+
     # Print RMS to console
     if rms > 0.2:
     	print rms
 	print "Level exceeded!!!"
+    
+    #record rms and time of soundfile
+    levels_df.loc[len(levels_df)] = [datetime.datetime.now(), rms]
 
     # Write audio byte array values to wave file
     wavefile.writeframes(in_data)
@@ -146,3 +177,18 @@ while recording:
 recorder.close()
 pa.terminate()
 wavefile.close()
+
+levels_df.to_csv('recording_levels.csv')
+
+#aggregate levels_df to second level
+levels_df.index = pd.to_datetime(levels_df.time)
+levels_agg_df = levels_df.level.resample('S', how=(np.mean))
+
+#convert to decibels
+decibels_df = pd.DataFrame({'time': levels_agg_df.index, 'levels': levels_agg_df.values})
+p_0 = 1.0
+decibels_df['decibels'] = 20 * np.log10(decibels_df.levels / p_0)
+
+#output to csv
+decibels_df.to_csv('recording_agg_levels.csv')
+
